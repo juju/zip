@@ -26,6 +26,7 @@ type Reader struct {
 	File          []*File
 	Comment       string
 	decompressors map[uint16]Decompressor
+	size          int64
 }
 
 type ReadCloser struct {
@@ -84,6 +85,7 @@ func (z *Reader) init(r io.ReaderAt, size int64) error {
 		return fmt.Errorf("archive/zip: TOC declares impossible %d files in %d byte zip", end.directoryRecords, size)
 	}
 	z.r = r
+	z.size = size
 	z.File = make([]*File, 0, end.directoryRecords)
 	z.Comment = end.comment
 	rs := io.NewSectionReader(r, 0, size)
@@ -179,6 +181,15 @@ func (f *File) Open() (rc io.ReadCloser, err error) {
 		desr: desr,
 	}
 	return
+}
+
+// Append appends entries to the existing zip archive represented by z.
+// The writer w should be positioned at the end of the archive data.
+// When the returned writer is closed, any entries with names that
+// already exist in the archive will have been "replaced" by the new
+// entries, although the original data will still be there.
+func (z *Reader) Append(w io.Writer) *Writer {
+	return newAppendingWriter(z, w)
 }
 
 type checksumReader struct {
