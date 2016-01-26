@@ -22,6 +22,7 @@ type Writer struct {
 	last        *fileWriter
 	closed      bool
 	compressors map[uint16]Compressor
+	names       map[string]int // filename -> index in dir slice.
 }
 
 type header struct {
@@ -43,6 +44,25 @@ func (w *Writer) SetOffset(n int64) {
 		panic("zip: SetOffset called after data was written")
 	}
 	w.cw.count = n
+}
+
+func newAppendingWriter(r *Reader, fw io.Writer) *Writer {
+	w := &Writer{
+		cw: &countWriter{
+			w:     bufio.NewWriter(fw),
+			count: r.size,
+		},
+		dir:   make([]*header, len(r.File), len(r.File)*3/2),
+		names: make(map[string]int),
+	}
+	for i, f := range r.File {
+		w.dir[i] = &header{
+			FileHeader: &f.FileHeader,
+			offset:     uint64(f.headerOffset),
+		}
+		w.names[f.Name] = i
+	}
+	return w
 }
 
 // Flush flushes any buffered data to the underlying writer.
@@ -67,7 +87,14 @@ func (w *Writer) Close() error {
 
 	// write central directory
 	start := w.cw.count
+	records := uint64(0)
 	for _, h := range w.dir {
+		if h.FileHeader == nil {
+			// This entry has been superceded by a later
+			// appended entry.
+			continue
+		}
+		records++
 		var buf [directoryHeaderLen]byte
 		b := writeBuf(buf[:])
 		b.uint32(uint32(directoryHeaderSignature))
@@ -123,7 +150,6 @@ func (w *Writer) Close() error {
 	}
 	end := w.cw.count
 
-	records := uint64(len(w.dir))
 	size := uint64(end - start)
 	offset := uint64(start)
 
@@ -208,6 +234,13 @@ func (w *Writer) CreateHeader(fh *FileHeader) (io.Writer, error) {
 	if len(w.dir) > 0 && w.dir[len(w.dir)-1].FileHeader == fh {
 		// See https://golang.org/issue/11144 confusion.
 		return nil, errors.New("archive/zip: invalid duplicate FileHeader")
+	}
+	if i, ok := w.names[fh.Name]; ok {
+		// We're appending a file that existed already,
+		// so clear out the old entry so that it won't
+		// be added to the index.
+		w.dir[i].FileHeader = nil
+		delete(w.names, fh.Name)
 	}
 
 	fh.Flags |= 0x8 // we will write a data descriptor

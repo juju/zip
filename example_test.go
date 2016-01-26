@@ -5,13 +5,14 @@
 package zip_test
 
 import (
-	"github.com/juju/zip"
 	"bytes"
 	"compress/flate"
 	"fmt"
 	"io"
 	"log"
 	"os"
+
+	"github.com/juju/zip"
 )
 
 func ExampleWriter() {
