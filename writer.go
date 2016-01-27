@@ -46,6 +46,7 @@ func (w *Writer) SetOffset(n int64) {
 	w.cw.count = n
 }
 
+// newAppendingWriter holds the implementation of Reader.Append.
 func newAppendingWriter(r *Reader, fw io.Writer) *Writer {
 	w := &Writer{
 		cw: &countWriter{
